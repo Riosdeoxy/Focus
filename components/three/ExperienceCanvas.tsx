@@ -1,0 +1,52 @@
+'use client';
+import {useEffect,useRef} from 'react';
+import * as T from 'three';
+import {DRACOLoader} from 'three/examples/jsm/loaders/DRACOLoader.js';
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {timelineState} from '@/lib/timeline';
+import {makePageTexture,PageTexture} from '@/lib/project-textures';
+
+type Props={onProgress:(n:number)=>void;onReady:()=>void;onError:()=>void};
+const ease=(a:number,b:number,p:number)=>T.MathUtils.smoothstep(p,a,b);
+const mix=T.MathUtils.lerp;
+const projects=[
+ {name:'handmade',start:4.1,end:5.6,bg:'#eee4da'},
+ {name:'mira',start:5.6,end:7.1,bg:'#e1e7e2'},
+ {name:'bruma',start:7.1,end:8.6,bg:'#17130f'},
+ {name:'orea',start:8.6,end:10.1,bg:'#d8d0c4'},
+] as const;
+
+export default function ExperienceCanvas({onProgress,onReady,onError}:Props){const host=useRef<HTMLDivElement>(null);
+ useEffect(()=>{let disposed=false,raf=0;let renderer:T.WebGLRenderer;
+  try{renderer=new T.WebGLRenderer({antialias:innerWidth>760,alpha:false,powerPreference:'high-performance'});}catch{onError();return;}
+  const mobile=()=>innerWidth<=760;renderer.setPixelRatio(Math.min(devicePixelRatio,mobile()?1.35:1.7));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;renderer.shadowMap.enabled=!mobile();renderer.shadowMap.type=T.PCFSoftShadowMap;host.current!.appendChild(renderer.domElement);
+  const scene=new T.Scene();scene.background=new T.Color('#080806');const camera=new T.PerspectiveCamera(37,innerWidth/innerHeight,.1,100);camera.position.set(0,0,8);
+  const pmrem=new T.PMREMGenerator(renderer);const environment=new RoomEnvironment();const env=pmrem.fromScene(environment,.04);scene.environment=env.texture;scene.environmentIntensity=1.25;environment.dispose();
+  const key=new T.DirectionalLight('#fff0d2',5);key.position.set(-3,5,5);key.castShadow=!mobile();key.shadow.mapSize.set(512,512);scene.add(key);
+  const rim=new T.DirectionalLight('#f2c94c',4);rim.position.set(4,1,-2);scene.add(rim);const fill=new T.DirectionalLight('#e5edff',2);fill.position.set(-5,-1,2);scene.add(fill,new T.AmbientLight('#fff4dc',.25));
+  const manager=new T.LoadingManager();manager.onProgress=(_u,n,total)=>{if(!disposed)onProgress(Math.min(96,n/total*96))};const draco=new DRACOLoader(manager).setDecoderPath('/draco/');draco.setWorkerLimit(2);const loader=new GLTFLoader(manager).setDRACOLoader(draco);
+  let sculpture:T.Group,display:T.Group,phone:T.Group,type:T.Group;let textures:PageTexture[]=[],mobileTexture:PageTexture;const mats:T.MeshPhysicalMaterial[]=[];let lastP=-1,lastTime=0,slow=0,frames=0;const target=new T.Vector3();
+  const resize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)};window.addEventListener('resize',resize);const lost=(e:Event)=>{e.preventDefault();cancelAnimationFrame(raf);onError()};renderer.domElement.addEventListener('webglcontextlost',lost);
+  const loadImage=(url:string)=>new Promise<HTMLImageElement>((resolve,reject)=>{manager.itemStart(url);const img=new Image();img.onload=()=>{manager.itemEnd(url);resolve(img)};img.onerror=()=>{manager.itemError(url);manager.itemEnd(url);reject(new Error(url))};img.src=url});
+  async function init(){try{const models=['unda-sculpture'+(mobile()?'-mobile':''),'display','mobile','unda-type'];const urls=projects.map(x=>`/images/projects/${x.name}-site.webp`);const [loaded,images]=await Promise.all([Promise.all(models.map(x=>loader.loadAsync('/models/'+x+'.glb'))),Promise.all(urls.map(loadImage)),document.fonts.ready]);if(disposed)return;
+    [sculpture,display,phone,type]=loaded.map(x=>x.scene);sculpture.traverse(o=>{if(o instanceof T.Mesh){const old=o.material as T.MeshStandardMaterial;const m=new T.MeshPhysicalMaterial({color:old.color,metalness:.9,roughness:.22,clearcoat:1,clearcoatRoughness:.1});m.userData.gold=old.name==='UNDA_Gold';o.material=m;mats.push(m);o.castShadow=true;o.receiveShadow=true}});scene.add(sculpture,display,phone,type);
+    textures=images.map(x=>makePageTexture(x,false));mobileTexture=makePageTexture(images[1],true);const screen=display.getObjectByName('Screen') as T.Mesh;screen.material=new T.MeshBasicMaterial({map:textures[0].texture,toneMapped:false});const smallScreen=phone.getObjectByName('Screen') as T.Mesh;smallScreen.material=new T.MeshBasicMaterial({map:mobileTexture.texture,toneMapped:false});display.visible=phone.visible=type.visible=false;onProgress(100);onReady();render(0);
+   }catch(e){console.error('UNDA assets:',e);onError()}}
+  function render(time:number){if(disposed)return;raf=requestAnimationFrame(render);if(document.hidden)return;const p=timelineState.progress,dt=time-lastTime;lastTime=time;frames++;if(dt>30)slow++;if(frames===180){if(slow>65)renderer.setPixelRatio(1);frames=0;slow=0}const isMobile=mobile(),reduced=timelineState.reduced,motion=reduced?0:1,idle=reduced?0:Math.sin(time*.00018)*.035,scrollChanged=Math.abs(p-lastP)>.001;if((reduced||(p>=14.2&&p<14.8))&&!scrollChanged&&!timelineState.menu)return;lastP=p;
+   const bg=new T.Color('#080806');if(p<4.1)bg.lerp(new T.Color('#f5e7bf'),ease(.85,1.65,p));else{const current=projects.findIndex(x=>p>=x.start&&p<x.end);if(current>=0)bg.set(projects[current].bg);if(current>=0&&current<projects.length-1&&p>projects[current].end-.28)bg.lerp(new T.Color(projects[current+1].bg),ease(projects[current].end-.28,projects[current].end,p));if(p>=10.1&&p<11.1)bg.set('#dfe4db');if(p>=10.8&&p<11.25)bg.lerp(new T.Color('#080806'),ease(10.8,11.25,p));if(p>=11.25&&p<15)bg.set('#080806');if(p>=14.8)bg.set('#080806').lerp(new T.Color('#f2c94c'),ease(14.8,15.3,p))}if(timelineState.menu)bg.set('#080806');(scene.background as T.Color).copy(bg);
+   camera.fov=mix(37,34,ease(.2,1.4,p))*(isMobile?1.05:1);camera.position.set(timelineState.mouse.x*.12*motion,-timelineState.mouse.y*.08*motion,8-ease(.3,1.45,p)*(1-ease(1.55,2,p))*.45*motion);target.set(0,0,0);camera.lookAt(target);camera.updateProjectionMatrix();rim.color.set(p<1.4?'#f2c94c':p<10.1?'#fff4df':'#f2c94c');key.intensity=p>1.5&&p<11?3.5:5;scene.environmentIntensity=p>1.4&&p<11?1.4:1.1;
+   sculpture.visible=p<4.2||p>=11.1||timelineState.menu;display.visible=p>=3.8&&p<11.3;phone.visible=p>9.95&&p<11.2;type.visible=p>13.5&&p<14.2;sculpture.position.set(isMobile?1:2.05,isMobile?-1.35:0,0);sculpture.rotation.set(.25,-.45+idle,.1);sculpture.scale.setScalar(isMobile?.9:1.25);
+   if(p<1.55){const s=ease(.3,1.5,p);sculpture.position.x=mix(isMobile?1:2.05,0,s);sculpture.position.z=mix(0,5.2,s)*motion;sculpture.rotation.y+=s*1.8*motion;sculpture.rotation.z+=s*.4*motion;sculpture.scale.multiplyScalar(1+s*.5)}else if(p<4.2){const s=ease(1.5,2,p);sculpture.position.set(mix(0,isMobile?.8:2.3,s),mix(0,-1.25,s),mix(5.2,-1,s)*motion);sculpture.scale.setScalar(mix(1.7,.8,s));sculpture.rotation.set(.3,p*.55*motion,.4);if(p>3.9)sculpture.position.x+=(p-3.9)*15}
+   if(p>=11.1){sculpture.position.set(isMobile?1.3:2.65,isMobile?-1.55:.25,-1.2);sculpture.scale.setScalar(isMobile?.65:1);sculpture.rotation.set(.4+timelineState.service*.5,-.3+timelineState.service*.9+idle,.2);if(p>12.45&&p<13.25){const spread=Math.sin((p-12.45)/.8*Math.PI)*.5;sculpture.children.forEach((part,i)=>part.position.set((i-1)*spread,Math.abs(i-1)*spread,0))}else sculpture.children.forEach(part=>part.position.set(0,0,0));if(p>=13.25&&p<14.2)sculpture.scale.setScalar(.4*(1-ease(13.5,14.05,p)));if(p>=14.2&&p<15.05)sculpture.visible=false;if(p>=15.05){sculpture.position.set(isMobile?1.1:2.8,isMobile?-1.55:-.4,-.7);sculpture.scale.setScalar(isMobile?.65:1);sculpture.rotation.set(.2,(p-15.05)*Math.PI*2*motion+idle,.3)}}
+   if(timelineState.menu){sculpture.visible=true;display.visible=phone.visible=type.visible=false;sculpture.position.set(2,0,0);sculpture.scale.setScalar(1.5);sculpture.rotation.y=timelineState.mouse.x*.5}
+   const gold=ease(1.65,2.9,p)*(1-ease(3.25,3.9,p));mats.forEach(m=>{m.color.set(m.userData.gold?'#b39137':'#292923').lerp(new T.Color('#c2a049'),gold);m.metalness=mix(.93,.55,gold);m.roughness=mix(.21,.32,gold);m.transmission=p>3.1&&p<4.2?ease(3.1,3.8,p)*.28:0;if(p>=15.05)m.color.set(m.userData.gold?'#080806':'#c5a231')});
+   if(display.visible){let i=projects.findIndex(x=>p>=x.start&&p<x.end);if(i<0)i=p<4.1?0:3;const project=projects[i],local=Math.max(0,Math.min(1,(p-project.start)/(project.end-project.start))),enter=i===0?ease(0,.2,local):1,zoom=ease(.18,.45,local)*(1-ease(.64,.82,local)),exit=ease(.72,1,local);display.position.set(0,isMobile?-.3:-.25,zoom*.45);display.rotation.set(.05*(1-enter),mix(-1.12,0,enter),0);display.rotation.y+=i*Math.PI*2+exit*Math.PI*2*motion;let scale=isMobile?.68:1.12;scale+=zoom*(isMobile?.5:1.75);display.scale.setScalar(scale);const screen=display.getObjectByName('Screen') as T.Mesh,mat=screen.material as T.MeshBasicMaterial;const swap=i<3&&local>.86?i+1:i,next=textures[swap].texture;if(mat.map!==next){mat.map=next;mat.needsUpdate=true}textures[i].update(ease(.18,.72,local));if(i===3&&p>9.95){const s=ease(9.95,10.75,p);display.position.x=mix(0,isMobile?-1.2:-2.2,s);display.position.z=-s*2;display.scale.multiplyScalar(1-s*.4);display.rotation.y=-s*.2}}
+   if(phone.visible){const s=ease(9.95,10.6,p);phone.position.set(mix(3,isMobile?.8:2.1,s),isMobile?-1.2:-.1,mix(-3,.8,s));phone.rotation.set(0,mix(-.5,-.12,s),0);phone.scale.setScalar(isMobile?.83:1.3);mobileTexture.update(ease(10.25,11,p))}
+   if(type.visible){const s=ease(13.5,14.15,p);type.position.set(isMobile?.8:2.5,isMobile?-.5:.35,0);type.scale.setScalar(s*(isMobile?.55:.85));type.rotation.y=(1-s)*.6}
+   renderer.render(scene,camera)
+  }
+  init();return()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('resize',resize);renderer.domElement.removeEventListener('webglcontextlost',lost);scene.traverse(o=>{if(o instanceof T.Mesh){o.geometry.dispose();const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose())}});textures.forEach(x=>x.texture.dispose());mobileTexture?.texture.dispose();draco.dispose();env.dispose();pmrem.dispose();renderer.dispose();renderer.domElement.remove()};
+ // One WebGL lifecycle carries every brand scene through the scroll timeline.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[]);return <div ref={host} className="experience-canvas" aria-hidden="true"/>}

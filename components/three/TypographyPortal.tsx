@@ -1,0 +1,5 @@
+'use client';
+import {useEffect,useRef} from 'react';
+import {gsap} from 'gsap';
+import {timelineState} from '@/lib/timeline';
+export default function TypographyPortal(){const ref=useRef<HTMLCanvasElement>(null);useEffect(()=>{const el=ref.current!,ctx=el.getContext('2d')!;let last=-1;const draw=()=>{const p=timelineState.progress;const active=p>3.8&&p<4.3&&!timelineState.reduced;el.style.display=active?'block':'none';if(!active||last===p)return;last=p;const w=innerWidth,h=innerHeight;if(el.width!==w||el.height!==h){el.width=w;el.height=h;}const t=Math.max(0,Math.min(1,(p-3.8)/.5));ctx.globalCompositeOperation='source-over';ctx.clearRect(0,0,w,h);ctx.fillStyle='#f5e7bf';ctx.fillRect(0,0,w,h);ctx.globalCompositeOperation='destination-out';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`italic ${w*.23*(1+Math.pow(t,3)*32)}px "Instrument Serif", Georgia`;ctx.fillText('percebida.',w*.5,h*.5);ctx.globalCompositeOperation='source-over';el.style.opacity=String(Math.min(1,t*10,(1-t)*8));};gsap.ticker.add(draw);return()=>gsap.ticker.remove(draw)},[]);return <canvas ref={ref} className="type-portal" aria-hidden="true"/>}

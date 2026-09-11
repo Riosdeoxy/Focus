@@ -1,0 +1,6 @@
+'use client';
+import {useEffect,useRef} from 'react';
+import {gsap} from 'gsap';
+import {timelineState} from '@/lib/timeline';
+const projects=[['handmade',4.1,5.6,'#eee4da'],['mira',5.6,7.1,'#e1e7e2'],['bruma',7.1,8.6,'#17130f'],['orea',8.6,10.1,'#d8d0c4']] as const;
+export default function FallbackPortfolio(){const backdrop=useRef<HTMLDivElement>(null),frame=useRef<HTMLDivElement>(null),image=useRef<HTMLImageElement>(null);useEffect(()=>{let current='';const tick=()=>{const p=timelineState.progress,entry=projects.find(x=>p>=x[1]&&p<x[2]);if(!backdrop.current||!frame.current||!image.current)return;if(!entry){backdrop.current.style.opacity='0';return}backdrop.current.style.opacity='1';backdrop.current.style.backgroundColor=entry[3];const local=(p-entry[1])/(entry[2]-entry[1]);if(current!==entry[0]){current=entry[0];image.current.src=`/images/projects/${current}-site.webp`}frame.current.style.opacity=String(Math.min(1,local*7,(1-local)*7));const travel=Math.max(0,image.current.clientHeight-frame.current.clientHeight);image.current.style.transform=`translate3d(0,${-travel*Math.min(1,Math.max(0,(local-.16)/.58))}px,0)`};gsap.ticker.add(tick);return()=>gsap.ticker.remove(tick)},[]);return <div className="fallback-backdrop" ref={backdrop} aria-hidden="true"><div className="fallback-project" ref={frame}><img ref={image} alt=""/></div></div>}
